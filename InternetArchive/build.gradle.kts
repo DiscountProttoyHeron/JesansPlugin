@@ -2,7 +2,7 @@ import com.android.build.gradle.BaseExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
-version = 1
+version = 5
 
 extensions.configure<BaseExtension>("android") {
     compileOptions {
@@ -20,9 +20,9 @@ tasks.withType<KotlinCompile>().configureEach {
 
 cloudstream {
     description = "Stream public-domain classic films and documentaries from Internet Archive with polymorphic JSON shield and HTML self-healing fallback."
-    authors = listOf("HaxerAhmed")
+    authors = listOf("DiscountProttoyHeron")
     status = 1
-    tvTypes = listOf("Movie", "TvSeries")
+    tvTypes = listOf("Movie", "Documentary")
     language = "en"
     iconUrl = "https://archive.org/images/glogo.png"
 }
