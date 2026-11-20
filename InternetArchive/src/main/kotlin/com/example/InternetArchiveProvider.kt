@@ -39,14 +39,12 @@ class InternetArchiveProvider : MainAPI() {
 
     private val videoExtensionsPriority = listOf(".mp4", ".m3u8", ".mkv", ".webm", ".ogv")
 
-    // Polymorphic JSON Shield: Archive.org returns title/description/year as String OR List<Any>
     private fun Any?.toSafeString(): String? = when (this) {
         is String -> this
         is List<*> -> this.firstOrNull()?.toString()
         else -> this?.toString()
     }
 
-    // Smart URL Segment Encoder: prevents ExoPlayer crashes on spaces/special chars
     private fun encodeFilePath(fileName: String): String =
         fileName.trimStart('/').split("/").joinToString("/") { segment ->
             URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
@@ -96,18 +94,11 @@ class InternetArchiveProvider : MainAPI() {
             val items = parsed.response?.docs.orEmpty().mapNotNull { doc ->
                 val id = doc.identifier.toSafeString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
                 val title = doc.title.toSafeString()?.takeIf { it.isNotBlank() } ?: id
-                newMovieSearchResponse(
-                    name = title,
-                    url = "$mainUrl/details/$id",
-                    type = TvType.Movie
-                ) {
+                newMovieSearchResponse(title, "$mainUrl/details/$id", TvType.Movie) {
                     this.posterUrl = "$mainUrl/services/img/$id"
                 }
             }
-            return newHomePageResponse(
-                list = HomePageList(request.name, items),
-                hasNext = items.size >= 20
-            )
+            return newHomePageResponse(HomePageList(request.name, items), items.size >= 20)
         } catch (e: ErrorLoadingException) {
             throw e
         } catch (e: Exception) {
@@ -138,11 +129,7 @@ class InternetArchiveProvider : MainAPI() {
             return parsed.response?.docs.orEmpty().mapNotNull { doc ->
                 val id = doc.identifier.toSafeString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
                 val title = doc.title.toSafeString()?.takeIf { it.isNotBlank() } ?: id
-                newMovieSearchResponse(
-                    name = title,
-                    url = "$mainUrl/details/$id",
-                    type = TvType.Movie
-                ) {
+                newMovieSearchResponse(title, "$mainUrl/details/$id", TvType.Movie) {
                     this.posterUrl = "$mainUrl/services/img/$id"
                 }
             }
@@ -185,12 +172,7 @@ class InternetArchiveProvider : MainAPI() {
                 ?.trim()
             val yearInt = info?.year.toSafeString()?.take(4)?.toIntOrNull()
 
-            return newMovieLoadResponse(
-                name = title,
-                url = url,
-                type = TvType.Movie,
-                dataUrl = identifier
-            ) {
+            return newMovieLoadResponse(title, url, TvType.Movie, identifier) {
                 this.posterUrl = "$mainUrl/services/img/$identifier"
                 this.plot = descriptionText
                 this.year = yearInt
@@ -221,7 +203,6 @@ class InternetArchiveProvider : MainAPI() {
         var linksFound = 0
 
         try {
-            // Primary Path: Archive.org JSON Metadata API
             val metaResp = app.get(metaUrl)
             lastHttpStatus = metaResp.code
             if (metaResp.code in 200..299) {
@@ -232,7 +213,6 @@ class InternetArchiveProvider : MainAPI() {
                     entry.name?.substringAfterLast('.', "")?.lowercase()?.takeIf { it.isNotBlank() }
                 }.distinct()
 
-                // Extract external SRT / VTT subtitles
                 files.filter { file ->
                     val lower = file.name.orEmpty().lowercase()
                     lower.endsWith(".srt") || lower.endsWith(".vtt")
@@ -240,10 +220,9 @@ class InternetArchiveProvider : MainAPI() {
                     val fileName = sub.name ?: return@forEach
                     val subUrl = "$mainUrl/download/$identifier/${encodeFilePath(fileName)}"
                     val langLabel = fileName.substringBeforeLast(".").substringAfterLast(".", "English")
-                    subtitleCallback.invoke(SubtitleFile(lang = langLabel, url = subUrl))
+                    subtitleCallback.invoke(SubtitleFile(langLabel, subUrl))
                 }
 
-                // Multi-format video extraction ordered by priority (.mp4, .m3u8, .mkv, .webm, .ogv)
                 val prioritizedVideos = files.mapNotNull { entry ->
                     val fileName = entry.name ?: return@mapNotNull null
                     val lower = fileName.lowercase()
@@ -259,12 +238,7 @@ class InternetArchiveProvider : MainAPI() {
                         ?: fileName.substringAfterLast('.', "VIDEO").uppercase()
 
                     callback.invoke(
-                        newExtractorLink(
-                            source = this.name,
-                            name = "$name - $label",
-                            url = streamUrl,
-                            type = linkType
-                        ) {
+                        newExtractorLink(this.name, "$name - $label", streamUrl, linkType) {
                             this.referer = detailsUrl
                             this.quality = inferQuality(entry.height.toSafeString(), fileName)
                         }
@@ -273,7 +247,6 @@ class InternetArchiveProvider : MainAPI() {
                 }
             }
 
-            // Self-Healing API-to-HTML Fallback via Jsoup if JSON yielded 0 streams
             if (linksFound == 0) {
                 val htmlResp = app.get(detailsUrl)
                 lastHttpStatus = htmlResp.code
@@ -289,12 +262,7 @@ class InternetArchiveProvider : MainAPI() {
                     }
                     val extLabel = rawHref.substringAfterLast('.', "VIDEO").uppercase()
                     callback.invoke(
-                        newExtractorLink(
-                            source = this.name,
-                            name = "$name Fallback ($extLabel)",
-                            url = fullUrl,
-                            type = ExtractorLinkType.VIDEO
-                        ) {
+                        newExtractorLink(this.name, "$name Fallback ($extLabel)", fullUrl, ExtractorLinkType.VIDEO) {
                             this.referer = detailsUrl
                             this.quality = inferQuality(null, rawHref)
                         }

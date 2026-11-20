@@ -27,8 +27,8 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build plugins and plugins.json
-        run: ./gradlew make makePluginsJson --stacktrace
+      - name: Build InternetArchive plugin and plugins.json
+        run: ./gradlew :InternetArchive:make makePluginsJson
 
       - name: Prepare builds output
         run: |
