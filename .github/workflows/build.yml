@@ -42,13 +42,30 @@ jobs:
             ./gradlew make makePluginsJson --no-daemon
           fi
 
-      - name: Collect Multi-Plugin Artifacts
+      - name: Collect Multi-Plugin Artifacts & Verify SHA256
         run: |
           rm -rf /tmp/cs3_builds_out && mkdir -p /tmp/cs3_builds_out
           find . -maxdepth 3 -path "*/build/*.cs3" -exec cp -v {} /tmp/cs3_builds_out/ \;
           if [ -f build/plugins.json ]; then
             cp -v build/plugins.json /tmp/cs3_builds_out/plugins.json
           fi
+          python3 -c '
+          import json, hashlib, os
+          out_dir = "/tmp/cs3_builds_out"
+          p_file = os.path.join(out_dir, "plugins.json")
+          repo = os.environ.get("GITHUB_REPOSITORY", "")
+          if os.path.exists(p_file):
+              data = json.load(open(p_file))
+              for item in data:
+                  internal = item.get("internalName", "")
+                  cs3_path = os.path.join(out_dir, f"{internal}.cs3")
+                  if os.path.exists(cs3_path):
+                      item["sha256"] = hashlib.sha256(open(cs3_path, "rb").read()).hexdigest()
+                      if repo:
+                          item["url"] = f"https://raw.githubusercontent.com/{repo}/builds/{internal}.cs3"
+              json.dump(data, open(p_file, "w"), indent=2)
+              print("Verified plugins.json:", json.dumps(data, indent=2))
+          '
           ls -la /tmp/cs3_builds_out/
 
       - name: Publish Multi-Plugin Builds Branch
