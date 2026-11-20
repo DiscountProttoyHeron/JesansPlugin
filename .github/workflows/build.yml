@@ -1,50 +1,59 @@
-name: Build CloudStream Plugins
+name: Build CloudStream Extensions
 
 on:
   push:
-    branches:
-      - master
-      - main
+    branches-ignore:
+      - builds
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: cs3-builds-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
+  build-plugins:
+    name: Build & Publish .cs3 Plugins
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: 'gradle'
+          distribution: temurin
+          java-version: 17
+          cache: gradle
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Grant Execute Permission for Gradle Wrapper
+        run: chmod +x ./gradlew
 
-      - name: Build InternetArchive plugin and plugins.json
-        run: ./gradlew :InternetArchive:make makePluginsJson
+      - name: Build All Plugins (.cs3) & plugins.json
+        run: ./gradlew make makePluginsJson --no-daemon --stacktrace
 
-      - name: Prepare builds output
+      - name: Collect Multi-Plugin Artifacts
         run: |
-          mkdir -p dist
-          find . -name "*.cs3" -exec cp {} dist/ \;
-          if [ -f "build/plugins.json" ]; then
-            cp build/plugins.json dist/
-          elif [ -f "plugins.json" ]; then
-            cp plugins.json dist/
+          rm -rf /tmp/cs3_builds_out && mkdir -p /tmp/cs3_builds_out
+          find . -maxdepth 3 -path "*/build/*.cs3" -exec cp -v {} /tmp/cs3_builds_out/ \;
+          if [ -f build/plugins.json ]; then
+            cp -v build/plugins.json /tmp/cs3_builds_out/plugins.json
           fi
-          ls -la dist/
+          ls -la /tmp/cs3_builds_out/
 
-      - name: Deploy to builds branch
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: builds
-          publish_dir: ./dist
-          force_orphan: true
+      - name: Publish Multi-Plugin Builds Branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan builds_publish_tmp
+          git rm -rf --ignore-unmatch .
+          git clean -fdx
+          cp -v /tmp/cs3_builds_out/* .
+          git add -A
+          git commit -m "chore(builds): publish multi-plugin .cs3 artifacts & plugins.json"
+          git push --force origin HEAD:builds
