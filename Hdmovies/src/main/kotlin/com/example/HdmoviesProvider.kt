@@ -1,6 +1,5 @@
 package com.example
 
-import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.ErrorLoadingException
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.HomePageResponse
@@ -15,45 +14,50 @@ import com.lagradost.cloudstream3.mainPageOf
 import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.newMovieSearchResponse
-import com.lagradost.cloudstream3.utils.AppUtils
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 import java.net.URLEncoder
 
-// Zero-Failure Modern CloudStream 3 Provider Scaffold for: https://hdmovieszone.in
-// Edit selectors below or use Apply AI Patch to customize for this site.
 class HdmoviesProvider : MainAPI() {
     override var mainUrl = "https://hdmovieszone.in"
     override var name = "Hdmovies"
     override val hasMainPage = true
-    override var lang = "hin"
-    override val supportedTypes = setOf(TvType.Movie)
+    override var lang = "hi"
+    override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
     override val mainPage = mainPageOf(
-        "featured" to "Featured",
-        "latest" to "Latest"
+        "" to "Latest Movies",
+        "category/bollywood" to "Bollywood",
+        "category/hollywood" to "Hollywood",
+        "category/south-indian" to "South Indian",
+        "category/web-series" to "Web Series"
     )
 
-    private fun Any?.toSafeString(): String? = when (this) {
-        is String -> this
-        is List<*> -> this.firstOrNull()?.toString()
-        else -> this?.toString()
-    }
+    private val headers = mapOf(
+        "User-Agent" to "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+    )
 
-    private fun encodeFilePath(fileName: String): String =
-        fileName.trimStart('/').split("/").joinToString("/") { segment ->
-            URLEncoder.encode(segment, "UTF-8").replace("+", "%20")
+    private fun resolveUrl(raw: String?): String {
+        val value = raw?.trim().orEmpty()
+        return when {
+            value.isBlank() -> ""
+            value.startsWith("http://") || value.startsWith("https://") -> value
+            value.startsWith("//") -> "https:$value"
+            value.startsWith("/") -> "$mainUrl$value"
+            else -> "$mainUrl/$value"
         }
+    }
 
     private fun throwBlackboxReport(
         stage: String,
         targetUrl: String,
         httpStatus: Int? = null,
-        filesScanned: Int = 0,
-        availableExtensions: List<String> = emptyList(),
-        errorMessage: String
+        info: String
     ): Nothing {
         throw ErrorLoadingException(
             """
@@ -62,75 +66,104 @@ class HdmoviesProvider : MainAPI() {
             Stage: $stage
             Target_URL: $targetUrl
             HTTP_Status: ${httpStatus ?: "N/A"}
-            Files_Scanned: $filesScanned
-            Available_Extensions: ${if (availableExtensions.isEmpty()) "none" else availableExtensions.joinToString(", ")}
-            Error: $errorMessage
+            Info: $info
             """.trimIndent()
         )
     }
 
-    override suspend fun getMainPage(
-        page: Int,
-        request: MainPageRequest
-    ): HomePageResponse {
-        val url = "$mainUrl/api/catalog?category=${request.data}&page=$page"
+    private fun extractCards(doc: Document): List<SearchResponse> {
+        val selectorCandidates = listOf(
+            "article.post",
+            "article.item",
+            "div.items article",
+            "div.ml-item",
+            "div.bw_thumb",
+            "div.post-item",
+            "article"
+        )
+        var elements: List<Element> = emptyList()
+        for (selector in selectorCandidates) {
+            val found = doc.select(selector)
+            if (found.isNotEmpty()) {
+                elements = found
+                break
+            }
+        }
+        return elements.mapNotNull { card ->
+            val linkEl = card.selectFirst("h2 a, h3 a, .title a, a[title], a[href]") ?: return@mapNotNull null
+            val href = resolveUrl(linkEl.attr("href"))
+            if (href.isBlank() || href == mainUrl || href == "$mainUrl/") return@mapNotNull null
+            val imgEl = card.selectFirst("img")
+            val title = linkEl.text().trim()
+                .ifBlank { linkEl.attr("title").trim() }
+                .ifBlank { imgEl?.attr("alt")?.trim().orEmpty() }
+            if (title.isBlank()) return@mapNotNull null
+            val poster = resolveUrl(
+                imgEl?.attr("data-src")?.ifBlank { null }
+                    ?: imgEl?.attr("data-lazy-src")?.ifBlank { null }
+                    ?: imgEl?.attr("data-original")?.ifBlank { null }
+                    ?: imgEl?.attr("src")
+            )
+            newMovieSearchResponse(title, href, TvType.Movie) {
+                if (poster.isNotBlank()) this.posterUrl = poster
+            }
+        }.distinctBy { it.url }
+    }
+
+    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+        val base = if (request.data.isBlank()) mainUrl else "$mainUrl/${request.data.trim('/')}"
+        val url = if (page <= 1) "$base/" else "$base/page/$page/"
         try {
-            val resp = app.get(url)
+            val resp = app.get(url, headers = headers)
             if (resp.code !in 200..299) {
-                throwBlackboxReport("getMainPage", url, resp.code, errorMessage = "Non-2xx HTTP status")
+                throwBlackboxReport("getMainPage", url, resp.code, "HTTP error loading page")
             }
-            val catalog = AppUtils.parseJson<GenericCatalogResponse>(resp.text)
-            val items = catalog.items.orEmpty().mapNotNull { entry ->
-                val title = entry.title.toSafeString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                val id = entry.id.toSafeString() ?: return@mapNotNull null
-                newMovieSearchResponse(title, "$mainUrl/item/$id", TvType.Movie) {
-                    this.posterUrl = entry.posterUrl.toSafeString()
-                }
+            val items = extractCards(resp.document)
+            if (items.isEmpty()) {
+                val sampleClasses = resp.document.select("article, div[class*=post], div[class*=movie], div[class*=item]")
+                    .take(5).joinToString(", ") { "${it.tagName()}.${it.className()}" }
+                throwBlackboxReport("getMainPage", url, resp.code, "0 cards matched. Sample tags: $sampleClasses")
             }
-            return newHomePageResponse(HomePageList(request.name, items), hasNext = items.isNotEmpty())
+            return newHomePageResponse(HomePageList(request.name, items), items.size >= 8)
         } catch (e: ErrorLoadingException) {
             throw e
         } catch (e: Exception) {
-            throwBlackboxReport("getMainPage", url, errorMessage = e.message ?: "Parse failure")
+            throwBlackboxReport("getMainPage", url, null, e.message ?: e::class.java.simpleName)
         }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val url = "$mainUrl/api/search?q=${URLEncoder.encode(query.trim(), "UTF-8")}"
-        try {
-            val resp = app.get(url)
-            if (resp.code !in 200..299) {
-                throwBlackboxReport("search", url, resp.code, errorMessage = "Non-2xx HTTP status")
-            }
-            val catalog = AppUtils.parseJson<GenericCatalogResponse>(resp.text)
-            return catalog.items.orEmpty().mapNotNull { entry ->
-                val title = entry.title.toSafeString()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                val id = entry.id.toSafeString() ?: return@mapNotNull null
-                newMovieSearchResponse(title, "$mainUrl/item/$id", TvType.Movie) {
-                    this.posterUrl = entry.posterUrl.toSafeString()
-                }
-            }
-        } catch (e: ErrorLoadingException) {
-            throw e
-        } catch (e: Exception) {
-            throwBlackboxReport("search", url, errorMessage = e.message ?: "Search failure")
-        }
+        val encoded = URLEncoder.encode(query.trim(), "UTF-8")
+        val url = "$mainUrl/?s=$encoded"
+        val resp = app.get(url, headers = headers)
+        if (resp.code !in 200..299) return emptyList()
+        return extractCards(resp.document)
     }
 
     override suspend fun load(url: String): LoadResponse {
-        try {
-            val doc = app.get(url).document
-            val title = doc.selectFirst("h1, title")?.text()?.trim().orEmpty().ifBlank { name }
-            val poster = doc.selectFirst("meta[property=og:image]")?.attr("content")
-            val plot = doc.selectFirst("meta[name=description]")?.attr("content")
-            return newMovieLoadResponse(title, url, TvType.Movie, url) {
-                this.posterUrl = poster
-                this.plot = plot
-            }
-        } catch (e: ErrorLoadingException) {
-            throw e
-        } catch (e: Exception) {
-            throwBlackboxReport("load", url, errorMessage = e.message ?: "Load failure")
+        val resp = app.get(url, headers = headers)
+        if (resp.code !in 200..299) {
+            throwBlackboxReport("load", url, resp.code, "Failed to fetch movie page")
+        }
+        val doc = resp.document
+        val title = doc.selectFirst("h1.entry-title, h1.post-title, h1")?.text()?.trim()
+            ?.ifBlank { null }
+            ?: doc.selectFirst("meta[property=og:title]")?.attr("content")?.trim()
+            ?: "Untitled"
+        val poster = resolveUrl(
+            doc.selectFirst("meta[property=og:image]")?.attr("content")?.ifBlank { null }
+                ?: doc.selectFirst(".poster img, .entry-content img, article img")?.let {
+                    it.attr("data-src").ifBlank { it.attr("src") }
+                }
+        )
+        val plot = doc.selectFirst("meta[property=og:description]")?.attr("content")?.trim()
+            ?: doc.selectFirst(".entry-content p")?.text()?.trim()
+        val year = Regex("(19|20)\\d{2}").find(title)?.value?.toIntOrNull()
+
+        return newMovieLoadResponse(title, url, TvType.Movie, url) {
+            if (poster.isNotBlank()) this.posterUrl = poster
+            this.plot = plot
+            this.year = year
         }
     }
 
@@ -140,52 +173,59 @@ class HdmoviesProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        var linksFound = 0
-        try {
-            val resp = app.get(data)
-            val doc = resp.document
-            doc.select("a[href$=.mp4], a[href$=.m3u8], a[href$=.mkv], a[href$=.webm], a[href$=.ogv], source[src]")
-                .forEach { el ->
-                    val raw = (el.attr("href").ifBlank { el.attr("src") }).trim()
-                    if (raw.isBlank()) return@forEach
-                    val resolved = if (raw.startsWith("http")) raw else "$mainUrl/${encodeFilePath(raw)}"
-                    val isHls = resolved.lowercase().contains(".m3u8")
-                    callback.invoke(
-                        newExtractorLink(
-                            source = this.name,
-                            name = "$name Direct",
-                            url = resolved,
-                            type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                        ) {
-                            this.referer = mainUrl
-                            this.quality = Qualities.Unknown.value
-                        }
-                    )
-                    linksFound++
-                }
-            if (linksFound == 0) {
-                throwBlackboxReport(
-                    stage = "loadLinks",
-                    targetUrl = data,
-                    httpStatus = resp.code,
-                    errorMessage = "0 video links matched on target page"
-                )
-            }
-            return true
-        } catch (e: ErrorLoadingException) {
-            throw e
-        } catch (e: Exception) {
-            throwBlackboxReport("loadLinks", data, errorMessage = e.message ?: "Extractor error")
+        val resp = app.get(data, headers = headers)
+        if (resp.code !in 200..299) {
+            throwBlackboxReport("loadLinks", data, resp.code, "Failed to fetch stream page")
         }
+        val doc = resp.document
+        var linksFound = 0
+
+        val iframeUrls = doc.select("iframe[src], iframe[data-src]").mapNotNull { el ->
+            resolveUrl(el.attr("data-src").ifBlank { el.attr("src") }).takeIf { it.isNotBlank() }
+        }.distinct()
+
+        for (iframe in iframeUrls) {
+            if (loadExtractor(iframe, data, subtitleCallback, callback)) {
+                linksFound++
+            }
+        }
+
+        val directVideos = doc.select("video source[src], a[href$=.mp4], a[href$=.mkv], a[href$=.m3u8]").mapNotNull { el ->
+            resolveUrl(el.attr("src").ifBlank { el.attr("href") }).takeIf { it.isNotBlank() }
+        }.distinct()
+
+        for (videoUrl in directVideos) {
+            val isHls = videoUrl.contains(".m3u8", true)
+            val type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+            callback.invoke(
+                newExtractorLink(this.name, "$name Direct", videoUrl, type) {
+                    this.referer = data
+                    this.quality = Qualities.Unknown.value
+                }
+            )
+            linksFound++
+        }
+
+        val hostKeywords = listOf(
+            "hubcloud", "gdflix", "filepress", "streamtape", "dood", "mixdrop",
+            "vidsrc", "filemoon", "streamwish", "vcloud", "pixeldrain", "gofile", "drive.google"
+        )
+        val candidateLinks = doc.select(".entry-content a[href], article a[href]").mapNotNull { el ->
+            val href = resolveUrl(el.attr("href"))
+            if (href.isNotBlank() && hostKeywords.any { href.contains(it, true) }) href else null
+        }.distinct()
+
+        for (hostUrl in candidateLinks) {
+            if (loadExtractor(hostUrl, data, subtitleCallback, callback)) {
+                linksFound++
+            }
+        }
+
+        if (linksFound == 0) {
+            val sampleLinks = doc.select(".entry-content a[href], iframe[src]").take(8)
+                .joinToString(" | ") { it.attr("href").ifBlank { it.attr("src") } }
+            throwBlackboxReport("loadLinks", data, resp.code, "0 streams extracted. Found links: $sampleLinks")
+        }
+        return true
     }
 }
-
-data class GenericCatalogResponse(
-    @JsonProperty("items") val items: List<GenericCatalogItem>? = null
-)
-
-data class GenericCatalogItem(
-    @JsonProperty("id") val id: Any? = null,
-    @JsonProperty("title") val title: Any? = null,
-    @JsonProperty("poster_url") val posterUrl: Any? = null
-)
