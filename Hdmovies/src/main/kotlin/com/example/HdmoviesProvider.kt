@@ -31,11 +31,7 @@ class HdmoviesProvider : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
     override val mainPage = mainPageOf(
-        "" to "Latest Movies",
-        "category/bollywood" to "Bollywood",
-        "category/hollywood" to "Hollywood",
-        "category/south-indian" to "South Indian",
-        "category/web-series" to "Web Series"
+        "" to "Latest Movies"
     )
 
     private val headers = mapOf(
@@ -116,10 +112,11 @@ class HdmoviesProvider : MainAPI() {
         try {
             val resp = app.get(url, headers = headers)
             if (resp.code !in 200..299) {
+                if (page > 1) return newHomePageResponse(HomePageList(request.name, emptyList()), false)
                 throwBlackboxReport("getMainPage", url, resp.code, "HTTP error loading page")
             }
             val items = extractCards(resp.document)
-            if (items.isEmpty()) {
+            if (items.isEmpty() && page == 1) {
                 val sampleClasses = resp.document.select("article, div[class*=post], div[class*=movie], div[class*=item]")
                     .take(5).joinToString(", ") { "${it.tagName()}.${it.className()}" }
                 throwBlackboxReport("getMainPage", url, resp.code, "0 cards matched. Sample tags: $sampleClasses")
