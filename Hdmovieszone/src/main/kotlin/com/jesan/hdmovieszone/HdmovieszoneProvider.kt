@@ -30,7 +30,7 @@ import java.net.URLEncoder
 
 // Phase 3 Universal Deep-Extraction Provider (WordPress DooPlay) for: https://hdmovieszone.in
 // Preset: Archive.org (Public Domain) | Cloudflare Shield: OFF
-// Card: article.item | Title: h3, .data h3, a[title] | Poster: src
+// Card: article | Title: h3 | Poster: src
 class HdmovieszoneProvider : MainAPI() {
     override var mainUrl = "https://hdmovieszone.in"
     override var name = "Hdmovieszone"
@@ -38,7 +38,7 @@ class HdmovieszoneProvider : MainAPI() {
     override var lang = "hin"
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
-    private val primaryCardSelector = "article.item"
+    private val primaryCardSelector = "article"
     private val fallbackCardSelectors = listOf(
         "article.item",
         "article.post",
@@ -50,7 +50,7 @@ class HdmovieszoneProvider : MainAPI() {
         ".grid-item",
         "article"
     )
-    private val titleSelector = "h3, .data h3, a[title]"
+    private val titleSelector = "h3"
     private val posterAttr = "src"
     private val searchPattern = "/?s={query}"
     private val paginationFormat = "/page/{page}/"
@@ -93,22 +93,8 @@ class HdmovieszoneProvider : MainAPI() {
     override val mainPage = mainPageOf(
         "" to "Latest Movies",
         "/films/" to "Movies",
-        "/thriller/" to "Thriller",
-        "/comedy/" to "Comedy",
-        "/action/" to "Action",
-        "/romance/" to "Romance",
-        "/sci-fi/" to "Sci-Fi",
-        "/drama/" to "Drama",
-        "/horror/" to "Horror",
-        "/adventure/" to "Adventure",
-        "/crime/" to "Crime",
-        "/fantasy/" to "Fantasy",
         "/animation/" to "Animation",
-        "/mystery/" to "Mystery",
-        "/family/" to "Family",
-        "/documentary/" to "Documentary",
-        "/biography/" to "Biography",
-        "/history/" to "History"
+        "/war/" to "War"
     )
 
     private fun buildRequestHeaders(referer: String?): Map<String, String> {
