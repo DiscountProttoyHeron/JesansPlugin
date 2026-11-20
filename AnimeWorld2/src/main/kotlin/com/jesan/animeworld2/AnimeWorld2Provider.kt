@@ -395,12 +395,18 @@ class AnimeWorld2Provider : MainAPI() {
         refererUrl: String,
         labelHint: String,
         emittedStreams: MutableSet<String>,
-        callback: (ExtractorLink) -> Unit
+        callback: (ExtractorLink) -> Unit,
+        forceM3u8: Boolean = false
     ): Boolean {
         val clean = streamUrl.trim()
         if (!clean.startsWith("http") || !emittedStreams.add(clean)) return false
-        val isHls = clean.lowercase().contains(".m3u8")
+        val lower = clean.lowercase()
+        val isHls = forceM3u8 || lower.contains(".m3u8") || lower.contains("/hls/") || lower.contains("master.txt") || lower.contains("playlist")
         val linkType = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+        val originHeader = runCatching {
+            val uri = java.net.URI(refererUrl)
+            "${uri.scheme}://${uri.host}"
+        }.getOrDefault(refererUrl.trimEnd('/'))
         callback.invoke(
             newExtractorLink(
                 this.name,
@@ -410,6 +416,12 @@ class AnimeWorld2Provider : MainAPI() {
             ) {
                 this.referer = refererUrl
                 this.quality = inferQuality(labelHint + " " + clean)
+                this.headers = mapOf(
+                    "User-Agent" to "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+                    "Referer" to refererUrl,
+                    "Origin" to originHeader,
+                    "Accept" to "*/*"
+                )
             }
         )
         return true
@@ -510,21 +522,25 @@ class AnimeWorld2Provider : MainAPI() {
         val hash = embedUrl.substringAfter("/video/", "").substringBefore("?").substringBefore("/")
         if (hash.isBlank()) return 0
         val host = embedUrl.substringBefore("/video/").trimEnd('/')
+        val browserUa = "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+        runCatching { app.get(embedUrl, headers = mapOf("User-Agent" to browserUa, "Referer" to "$mainUrl/")) }
         val apiUrl = "$host/player/index.php?data=$hash&do=getVideo"
         val body = runCatching {
             app.post(
                 apiUrl,
-                data = mapOf("hash" to hash, "r" to "$host/"),
+                data = mapOf("hash" to hash, "r" to "$mainUrl/"),
                 headers = mapOf(
+                    "User-Agent" to browserUa,
                     "X-Requested-With" to "XMLHttpRequest",
-                    "Referer" to embedUrl
+                    "Referer" to embedUrl,
+                    "Origin" to host
                 )
             ).text
         }.getOrDefault("")
-        val rawStream = Regex("\"(?:videoSource|securedLink|file)\"\\s*:\\s*\"([^\"]+)\"")
+        val rawStream = Regex("\"(?:videoSource|securedLink|file|hls)\"\\s*:\\s*\"([^\"]+)\"")
             .find(body)?.groupValues?.getOrNull(1)?.replace("\\/", "/") ?: return 0
         val streamUrl = resolveUrl(rawStream, host)
-        return if (emitDirectStream(streamUrl, "$host/", "($langLabel)", emittedStreams, callback)) 1 else 0
+        return if (emitDirectStream(streamUrl, embedUrl, "($langLabel)", emittedStreams, callback, forceM3u8 = true)) 1 else 0
     }
 
     private suspend fun resolveCustomOrStandardEmbed(

@@ -2,7 +2,7 @@ import com.android.build.gradle.BaseExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
-version = 3
+version = 4
 
 extensions.configure<BaseExtension>("android") {
     compileOptions {
