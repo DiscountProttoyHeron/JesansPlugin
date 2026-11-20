@@ -464,7 +464,7 @@ class AnimeWorld2Provider : MainAPI() {
             }
         }
 
-        // Layer 2A: Embedded player iframes (src, data-src, data-litespeed-src)
+        // Layer 2A: Embedded player iframes + player*.php base64 data param extraction
         doc.select("iframe[src], iframe[data-src], iframe[data-litespeed-src]").forEach { iframe ->
             val rawSrc = iframe.attr("src")
                 .ifBlank { iframe.attr("data-src") }
@@ -477,6 +477,29 @@ class AnimeWorld2Provider : MainAPI() {
                         if (emitDirectStream(resolved, pageUrl, "Iframe", emittedStreams, callback)) count++
                     } else if (loadExtractor(resolved, pageUrl, subtitleCallback, callback)) {
                         count++
+                    }
+                }
+                val b64Match = Regex("[?&]data=([A-Za-z0-9+/=%_-]+)").find(resolved)
+                if (b64Match != null) {
+                    val rawB64 = java.net.URLDecoder.decode(b64Match.groupValues[1], "UTF-8")
+                        .replace('-', '+').replace('_', '/')
+                    val padded = rawB64 + "=".repeat((4 - rawB64.length % 4) % 4)
+                    val decodedJson = runCatching {
+                        String(Base64.decode(padded, Base64.DEFAULT), Charsets.UTF_8)
+                    }.getOrDefault("")
+                    val linkRegex = Regex("\"link\"\s*:\s*\"([^\"]+)\"")
+                    val langRegex = Regex("\"language\"\s*:\s*\"([^\"]+)\"")
+                    val langs = langRegex.findAll(decodedJson).map { it.groupValues[1] }.toList()
+                    linkRegex.findAll(decodedJson).forEachIndexed { idx, lm ->
+                        val unescapedUrl = lm.groupValues[1].replace("\\/", "/").trim()
+                        val langTag = langs.getOrNull(idx)?.let { " [$it]" } ?: ""
+                        if (unescapedUrl.startsWith("http") && triedEmbeds.add(unescapedUrl)) {
+                            if (directStreamRegex.containsMatchIn(unescapedUrl)) {
+                                if (emitDirectStream(unescapedUrl, resolved, "Player$langTag", emittedStreams, callback)) count++
+                            } else if (loadExtractor(unescapedUrl, resolved, subtitleCallback, callback)) {
+                                count++
+                            }
+                        }
                     }
                 }
             }
