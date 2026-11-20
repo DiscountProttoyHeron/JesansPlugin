@@ -91,10 +91,7 @@ class HdmovieszoneProvider : MainAPI() {
     private val yearRegex = Regex("\\b((?:19|20)\\d{2})\\b")
 
     override val mainPage = mainPageOf(
-        "" to "Latest Movies",
-        "/films/" to "Movies",
-        "/animation/" to "Animation",
-        "/war/" to "War"
+        "/films/" to "Movies"
     )
 
     private fun buildRequestHeaders(referer: String?): Map<String, String> {
