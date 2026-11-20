@@ -92,7 +92,10 @@ class AnimeWorld2Provider : MainAPI() {
 
     override val mainPage = mainPageOf(
         "" to "Latest Movies",
-        "/series/code-geass-lelouch-of-the-rebellion/" to "Seasons",
+        "/category/type/anime/?type=series" to "View More",
+        "/category/type/cartoon/?type=series" to "View More",
+        "/category/type/anime/?type=movies" to "View More",
+        "/category/type/cartoon/?type=movies" to "View More",
         "/movies/" to "MOVIES",
         "/series/" to "SERIES",
         "/category/anime/" to "ANIME",
