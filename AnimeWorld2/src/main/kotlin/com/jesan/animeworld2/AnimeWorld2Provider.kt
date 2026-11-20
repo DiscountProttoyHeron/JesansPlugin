@@ -91,15 +91,13 @@ class AnimeWorld2Provider : MainAPI() {
     private val yearRegex = Regex("\\b((?:19|20)\\d{2})\\b")
 
     override val mainPage = mainPageOf(
-        "" to "Latest Movies",
-        "/category/type/anime/?type=series" to "View More",
-        "/category/type/cartoon/?type=series" to "View More",
-        "/category/type/anime/?type=movies" to "View More",
-        "/category/type/cartoon/?type=movies" to "View More",
-        "/movies/" to "MOVIES",
-        "/series/" to "SERIES",
-        "/category/anime/" to "ANIME",
-        "/category/cartoon/" to "CARTOON"
+        "" to "Latest Drops",
+        "/movies/" to "Movies",
+        "/series/" to "Series",
+        "/category/type/anime/?type=series" to "Anime Series",
+        "/category/type/anime/?type=movies" to "Anime Movies",
+        "/category/type/cartoon/?type=series" to "Cartoon Series",
+        "/category/type/cartoon/?type=movies" to "Cartoon Movies"
     )
 
     private fun buildRequestHeaders(referer: String?): Map<String, String> {
@@ -464,7 +462,7 @@ class AnimeWorld2Provider : MainAPI() {
             }
         }
 
-        // Layer 2A: Embedded player iframes (src, data-src, data-litespeed-src)
+        // Layer 2A: Embedded player iframes + Custom WatchAnimeWorld (player1.php / short.icu / zephyrix)
         doc.select("iframe[src], iframe[data-src], iframe[data-litespeed-src]").forEach { iframe ->
             val rawSrc = iframe.attr("src")
                 .ifBlank { iframe.attr("data-src") }
@@ -473,16 +471,105 @@ class AnimeWorld2Provider : MainAPI() {
             if (resolved.startsWith("http") && !resolved.contains("about:blank")) {
                 iframesFound.add(resolved)
                 if (triedEmbeds.add(resolved)) {
-                    if (directStreamRegex.containsMatchIn(resolved)) {
-                        if (emitDirectStream(resolved, pageUrl, "Iframe", emittedStreams, callback)) count++
-                    } else if (loadExtractor(resolved, pageUrl, subtitleCallback, callback)) {
-                        count++
-                    }
+                    count += resolveCustomOrStandardEmbed(resolved, pageUrl, "Default", emittedStreams, subtitleCallback, callback)
                 }
             }
         }
 
+        // Also scan inline scripts/HTML for player1.php?data=... or play.zephyrix.org/video/...
+        Regex("https?://[^\"'\\s<>]+(?:player1\\.php\\?data=|zephyrix\\.[^/]+/video/)[^\"'\\s<>]+")
+            .findAll(doc.html())
+            .forEach { m ->
+                val foundUrl = m.value.replace("\\/", "/")
+                if (triedEmbeds.add(foundUrl)) {
+                    count += resolveCustomOrStandardEmbed(foundUrl, pageUrl, "Auto", emittedStreams, subtitleCallback, callback)
+                }
+            }
+
         return count
+    }
+
+    private suspend fun resolveShortRedirect(shortUrl: String, referer: String): String {
+        return runCatching {
+            val resp = app.get(shortUrl, referer = referer, allowRedirects = true)
+            val finalUrl = resp.url
+            if (finalUrl.startsWith("http") && !finalUrl.contains("short.icu", true)) return@runCatching finalUrl
+            val metaUrl = Regex("(?i)url=([^;\\s\"']+)").find(resp.text)?.groupValues?.getOrNull(1)
+            val jsUrl = windowLocationRegex.find(resp.text)?.groupValues?.getOrNull(1)
+            val ifrUrl = resp.document.selectFirst("iframe[src]")?.attr("src")
+            resolveUrl(metaUrl ?: jsUrl ?: ifrUrl, shortUrl).ifBlank { finalUrl }
+        }.getOrDefault(shortUrl)
+    }
+
+    private suspend fun extractZephyrixStream(
+        embedUrl: String,
+        langLabel: String,
+        emittedStreams: MutableSet<String>,
+        callback: (ExtractorLink) -> Unit
+    ): Int {
+        val hash = embedUrl.substringAfter("/video/", "").substringBefore("?").substringBefore("/")
+        if (hash.isBlank()) return 0
+        val host = embedUrl.substringBefore("/video/").trimEnd('/')
+        val apiUrl = "$host/player/index.php?data=$hash&do=getVideo"
+        val body = runCatching {
+            app.post(
+                apiUrl,
+                data = mapOf("hash" to hash, "r" to "$host/"),
+                headers = mapOf(
+                    "X-Requested-With" to "XMLHttpRequest",
+                    "Referer" to embedUrl
+                )
+            ).text
+        }.getOrDefault("")
+        val rawStream = Regex("\"(?:videoSource|securedLink|file)\"\\s*:\\s*\"([^\"]+)\"")
+            .find(body)?.groupValues?.getOrNull(1)?.replace("\\/", "/") ?: return 0
+        val streamUrl = resolveUrl(rawStream, host)
+        return if (emitDirectStream(streamUrl, "$host/", "($langLabel)", emittedStreams, callback)) 1 else 0
+    }
+
+    private suspend fun resolveCustomOrStandardEmbed(
+        embedUrl: String,
+        refererUrl: String,
+        langLabel: String,
+        emittedStreams: MutableSet<String>,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Int {
+        var hits = 0
+        if (embedUrl.contains("player1.php", true) && embedUrl.contains("data=", true)) {
+            val encodedData = java.net.URLDecoder.decode(
+                embedUrl.substringAfter("data=").substringBefore("&"),
+                "UTF-8"
+            )
+            val decodedJson = runCatching {
+                String(Base64.decode(encodedData, Base64.DEFAULT), Charsets.UTF_8)
+            }.getOrDefault("")
+            val itemRegex = Regex("\"language\"\\s*:\\s*\"([^\"]+)\"[^}]*\"link\"\\s*:\\s*\"([^\"]+)\"")
+            for (m in itemRegex.findAll(decodedJson)) {
+                val audioLang = m.groupValues[1].trim()
+                val rawTarget = m.groupValues[2].replace("\\/", "/").trim()
+                val target = if (rawTarget.contains("short.icu", true)) {
+                    resolveShortRedirect(rawTarget, embedUrl)
+                } else {
+                    rawTarget
+                }
+                hits += resolveCustomOrStandardEmbed(target, embedUrl, audioLang, emittedStreams, subtitleCallback, callback)
+            }
+            return hits
+        }
+        val resolvedTarget = if (embedUrl.contains("short.icu", true)) {
+            resolveShortRedirect(embedUrl, refererUrl)
+        } else {
+            embedUrl
+        }
+        if (resolvedTarget.contains("zephyrix", true) && resolvedTarget.contains("/video/", true)) {
+            return extractZephyrixStream(resolvedTarget, langLabel, emittedStreams, callback)
+        }
+        if (directStreamRegex.containsMatchIn(resolvedTarget)) {
+            if (emitDirectStream(resolvedTarget, refererUrl, "($langLabel)", emittedStreams, callback)) return 1
+        }
+        if (loadExtractor(resolvedTarget, refererUrl, subtitleCallback, callback)) return 1
+        return 0
     }
 
     override suspend fun loadLinks(

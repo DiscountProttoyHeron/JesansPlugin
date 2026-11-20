@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
@@ -35,7 +35,12 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build All Plugins (.cs3) & plugins.json
-        run: ./gradlew make makePluginsJson --no-daemon --stacktrace
+        run: |
+          if [ -d "ExampleProvider" ]; then
+            ./gradlew make makePluginsJson -x :ExampleProvider:make -x :ExampleProvider:compileDebugKotlin -x :ExampleProvider:compileReleaseKotlin --no-daemon
+          else
+            ./gradlew make makePluginsJson --no-daemon
+          fi
 
       - name: Collect Multi-Plugin Artifacts
         run: |

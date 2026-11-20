@@ -2,7 +2,7 @@ import com.android.build.gradle.BaseExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
-version = 1
+version = 2
 
 extensions.configure<BaseExtension>("android") {
     compileOptions {
@@ -19,10 +19,10 @@ tasks.withType<KotlinCompile>().configureEach {
 }
 
 cloudstream {
-    description = "This is for my personal use"
-    authors = listOf("HaxerAhmed")
+    description = "Stream dubbed anime and cartoon movies & series from WatchAnimeWorld"
+    authors = listOf("DiscountProttoyHeron")
     status = 1
     tvTypes = listOf("Movie", "TvSeries")
     language = "hin"
-    iconUrl = "https://archive.org/images/glogo.png"
+    iconUrl = "https://watchanimeworld.one/favicon.ico"
 }
