@@ -36,10 +36,27 @@ jobs:
 
       - name: Build All Plugins (.cs3) & plugins.json
         run: |
+          set +e
           if [ -d "ExampleProvider" ]; then
-            ./gradlew make makePluginsJson -x :ExampleProvider:make -x :ExampleProvider:compileDebugKotlin -x :ExampleProvider:compileReleaseKotlin --no-daemon --stacktrace --info
+            ./gradlew make makePluginsJson -x :ExampleProvider:make -x :ExampleProvider:compileDebugKotlin -x :ExampleProvider:compileReleaseKotlin --no-daemon --stacktrace 2>&1 | tee /tmp/gradle_build.log
           else
-            ./gradlew make makePluginsJson --no-daemon --stacktrace --info
+            ./gradlew make makePluginsJson --no-daemon --stacktrace 2>&1 | tee /tmp/gradle_build.log
+          fi
+          BUILD_EXIT=${PIPESTATUS[0]}
+          if [ $BUILD_EXIT -ne 0 ]; then
+            python3 -c '
+          import re
+          log = open("/tmp/gradle_build.log", errors="replace").read()
+          hits = re.findall(r"^e:\s+(?:file://)?([^:\n]+):(\d+):(\d+)\s+(.+)$", log, re.M)
+          for path, line, col, msg in hits[:15]:
+              rel = path.split("/JesansPlugin/")[-1]
+              print(f"::error file={rel},line={line},col={col}::{msg}")
+          if not hits:
+              for m in re.findall(r"(?m)^(?:> Task .* FAILED|FAILURE:.*|\* What went wrong:[\s\S]{0,600})", log)[:5]:
+                  clean = m.replace("\n", " | ").strip()
+                  print(f"::error::{clean}")
+          '
+            exit $BUILD_EXIT
           fi
 
       - name: Collect Multi-Plugin Artifacts & Verify SHA256
