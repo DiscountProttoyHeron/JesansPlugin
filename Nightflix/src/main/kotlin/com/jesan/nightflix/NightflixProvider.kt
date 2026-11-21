@@ -203,10 +203,6 @@ class NightflixProvider : MainAPI() {
         val lower = clean.lowercase()
         val isHls = lower.contains(".m3u8") || lower.contains("/hls/") || lower.contains("master")
         val type = if (isHls) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-        val origin = runCatching {
-            val u = URI(refererUrl)
-            "${u.scheme}://${u.host}"
-        }.getOrDefault(refererUrl.trimEnd('/'))
         val quality = when {
             lower.contains("2160") || lower.contains("4k") -> Qualities.P2160.value
             lower.contains("1080") -> Qualities.P1080.value
@@ -218,12 +214,6 @@ class NightflixProvider : MainAPI() {
             newExtractorLink(this.name, "$name $label", clean, type) {
                 this.referer = refererUrl
                 this.quality = quality
-                this.headers = mapOf(
-                    "User-Agent" to browserUa,
-                    "Referer" to refererUrl,
-                    "Origin" to origin,
-                    "Accept" to "*/*"
-                )
             }
         )
         return true
