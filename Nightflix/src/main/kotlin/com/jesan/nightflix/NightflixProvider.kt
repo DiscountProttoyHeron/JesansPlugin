@@ -38,17 +38,14 @@ class NightflixProvider : MainAPI() {
     override var lang = "en"
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
-    private val primaryCardSelector = "article, .movie-item, .post"
+    private val primaryCardSelector = "a[href*=/watch/], a[href*=/movie/]"
     private val fallbackCardSelectors = listOf(
-        "article.item",
-        "article.post",
-        ".movies-list .ml-item",
-        ".items article",
         ".movie-card",
-        ".movie-item",
-        ".post-item",
+        ".film-card",
+        ".item",
+        "article",
         ".grid-item",
-        "article"
+        "a[href*=/tv/]"
     )
     private val titleSelector = "h2, h3, .title"
     private val posterAttr = "src"
@@ -174,15 +171,20 @@ class NightflixProvider : MainAPI() {
     }
 
     private fun Element.toSearchItem(): SearchResponse? {
-        val anchor = this.selectFirst("a[href]") ?: return null
+        // If the element itself is an anchor, use it; otherwise find the first anchor
+        val anchor = if (this.tagName().equals("a", ignoreCase = true) && this.hasAttr("href")) this else this.selectFirst("a[href]")
+        if (anchor == null) return null
         val href = resolveUrl(anchor.attr("href"))
         if (isNonContentUrl(href)) return null
-        val img = this.selectFirst("img")
+        
+        val img = this.selectFirst("img") ?: anchor.selectFirst("img")
+        // Try to get title from common headings, or the anchor's text, or image alt
         val title = this.selectFirst(titleSelector)?.text()?.trim()
             ?.takeIf { it.isNotBlank() }
             ?: anchor.attr("title").trim().takeIf { it.isNotBlank() }
             ?: img?.attr("alt")?.trim()?.takeIf { it.isNotBlank() }
             ?: anchor.text().trim()
+            
         if (title.length < 2) return null
         val poster = extractPosterFromImg(img)
         return newMovieSearchResponse(title, href, TvType.Movie) {
