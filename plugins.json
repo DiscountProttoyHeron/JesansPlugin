@@ -1,0 +1,69 @@
+[
+  {
+    "iconUrl": "https://watchanimeworld.one/favicon.ico",
+    "fileHash": "sha256-3559e8946fed48c30726b642ee5a81e0cd61fd3f688788a9ea1ff42ba30f1795",
+    "apiVersion": 1,
+    "repositoryUrl": "https://github.com/DiscountProttoyHeron/JesansPlugin",
+    "fileSize": 60000,
+    "status": 1,
+    "language": "hin",
+    "authors": [
+      "DiscountProttoyHeron"
+    ],
+    "tvTypes": [
+      "Movie",
+      "TvSeries"
+    ],
+    "version": 4,
+    "internalName": "AnimeWorld2",
+    "description": "Stream dubbed anime and cartoon movies & series from WatchAnimeWorld",
+    "url": "https://raw.githubusercontent.com/DiscountProttoyHeron/JesansPlugin/builds/AnimeWorld2.cs3",
+    "name": "AnimeWorld2",
+    "sha256": "3559e8946fed48c30726b642ee5a81e0cd61fd3f688788a9ea1ff42ba30f1795"
+  },
+  {
+    "iconUrl": "https://archive.org/images/glogo.png",
+    "fileHash": "sha256-08b7bd84ab8f161bd25b04a8dc348f89125e6e21e3435e362eaf09713f865f8c",
+    "apiVersion": 1,
+    "repositoryUrl": "https://github.com/DiscountProttoyHeron/JesansPlugin",
+    "fileSize": 15079,
+    "status": 1,
+    "language": "en",
+    "authors": [
+      "DiscountProttoyHeron"
+    ],
+    "tvTypes": [
+      "Movie",
+      "TvSeries",
+      "Documentary"
+    ],
+    "version": 1,
+    "internalName": "Archive",
+    "description": "Stream public domain movies, cartoons and TV series from Internet Archive",
+    "url": "https://raw.githubusercontent.com/DiscountProttoyHeron/JesansPlugin/builds/Archive.cs3",
+    "name": "Archive",
+    "sha256": "08b7bd84ab8f161bd25b04a8dc348f89125e6e21e3435e362eaf09713f865f8c"
+  },
+  {
+    "iconUrl": "https://archive.org/images/glogo.png",
+    "fileHash": "sha256-d20d5c9c8f25218e55e38c9850959e83613535d98f751b8e2a58a30d03260d6a",
+    "apiVersion": 1,
+    "repositoryUrl": "https://github.com/DiscountProttoyHeron/JesansPlugin",
+    "fileSize": 51945,
+    "status": 1,
+    "language": "en",
+    "authors": [
+      "HaxerAhmed"
+    ],
+    "tvTypes": [
+      "Movie",
+      "Documentary"
+    ],
+    "version": 1,
+    "internalName": "Nightflix",
+    "description": "Stream public-domain classic films and documentaries from Internet Archive with polymorphic JSON shield and HTML self-healing fallback.",
+    "url": "https://raw.githubusercontent.com/DiscountProttoyHeron/JesansPlugin/builds/Nightflix.cs3",
+    "name": "Nightflix",
+    "sha256": "d20d5c9c8f25218e55e38c9850959e83613535d98f751b8e2a58a30d03260d6a"
+  }
+]
