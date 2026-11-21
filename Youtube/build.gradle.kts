@@ -1,10 +1,10 @@
+version = 2
 
-{
-  "commitMessage": "fix: configure CloudStream Gradle plugin dependencies",
-  "files": [
-    {
-      "path": "build.gradle.kts",
-      "content": "import com.android.build.gradle.BaseExtension\nimport com.lagradost.cloudstream3.gradle.CloudstreamExtension\nimport org.jetbrains.kotlin.gradle.dsl.JvmTarget\nimport org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile\nimport org.gradle.api.Project\n\nbuildscript {\n    repositories {\n        google()\n        mavenCentral()\n        maven(\"https://jitpack.io\")\n    }\n    dependencies {\n        classpath(\"com.android.tools.build:gradle:8.7.3\")\n        classpath(\"com.github.recloudstream:gradle:-SNAPSHOT\")\n        classpath(\"org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0\")\n    }\n}\n\nallprojects {\n    repositories {\n        google()\n        mavenCentral()\n        maven(\"https://jitpack.io\")\n    }\n}\n\nfun Project.cloudstream(configuration: CloudstreamExtension.() -> Unit) {\n    extensions.getByName<CloudstreamExtension>(\"cloudstream\").configuration()\n}\n\nfun Project.android(configuration: BaseExtension.() -> Unit) {\n    extensions.getByName<BaseExtension>(\"android\").configuration()\n}\n\nsubprojects {\n    apply(plugin = \"com.android.library\")\n    apply(plugin = \"kotlin-android\")\n    apply(plugin = \"com.lagradost.cloudstream3.gradle\")\n\n    cloudstream {\n        setRepo(System.getenv(\"GITHUB_REPOSITORY\") ?: \"https://github.com/user/repo\")\n    }\n\n    android {\n        namespace = \"com.jesan.youtube\"\n        compileSdkVersion(35)\n\n        defaultConfig {\n            minSdk = 21\n            targetSdk = 35\n        }\n\n        compileOptions {\n            sourceCompatibility = JavaVersion.VERSION_11\n            targetCompatibility = JavaVersion.VERSION_11\n        }\n    }\n\n    tasks.withType<KotlinJvmCompile>().configureEach {\n        compilerOptions {\n            jvmTarget.set(JvmTarget.JVM_11)\n            freeCompilerArgs.add(\"-Xskip-metadata-version-check\")\n        }\n    }\n\n    dependencies {\n        val implementation by configurations\n        implementation(\"com.github.recloudstream.cloudstream:library:-SNAPSHOT\")\n        implementation(kotlin(\"stdlib\"))\n        implementation(\"com.github.Blatzar:NiceHttp:0.4.11\")\n        implementation(\"org.jsoup:jsoup:1.18.3\")\n    }\n}\n\ntasks.register<Delete>(\"clean\") {\n    delete(rootProject.layout.buildDirectory)\n}\n"
-    }
-  ]
+cloudstream {
+    description = "Search, browse and stream YouTube videos using the Invidious API and CloudStream native YouTube extractor."
+    authors = listOf("Jesan")
+    status = 1
+    tvTypes = listOf("Movie")
+    language = "en"
+    iconUrl = "https://www.youtube.com/favicon.ico"
 }
