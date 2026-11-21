@@ -1,6 +1,6 @@
 {
-  "name": "JesansPlugin CloudStream Repo",
-  "description": "Auto-generated CloudStream 3 Extensions",
+  "name": "JesansPlugin",
+  "description": "CloudStream 3 Extensions Repository (DiscountProttoyHeron/JesansPlugin)",
   "manifestVersion": 1,
   "pluginLists": [
     "https://raw.githubusercontent.com/DiscountProttoyHeron/JesansPlugin/builds/plugins.json"
