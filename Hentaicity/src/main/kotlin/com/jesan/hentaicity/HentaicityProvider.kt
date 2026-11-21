@@ -91,12 +91,7 @@ class HentaicityProvider : MainAPI() {
     private val yearRegex = Regex("\\b((?:19|20)\\d{2})\\b")
 
     override val mainPage = mainPageOf(
-        "" to "Latest Movies",
-        "/pics/" to "Pics",
-        "/categories/" to "Categories",
-        "/characters/" to "Characters",
-        "/channels/" to "Channels",
-        "/members/" to "Members"
+        "" to "Latest Movies"
     )
 
     private fun buildRequestHeaders(referer: String?): Map<String, String> {
