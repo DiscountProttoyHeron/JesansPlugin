@@ -1,11 +1,12 @@
 package com.jesan.nightflix
 
-import com.lagradost.cloudstream3.plugins.BasePlugin
+import android.content.Context
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
+import com.lagradost.cloudstream3.plugins.Plugin
 
 @CloudstreamPlugin
-class NightflixPlugin : BasePlugin() {
-    override fun load() {
+class NightflixPlugin : Plugin() {
+    override fun load(context: Context) {
         registerMainAPI(NightflixProvider())
     }
 }

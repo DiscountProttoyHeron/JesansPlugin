@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
@@ -35,53 +35,15 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build All Plugins (.cs3) & plugins.json
-        run: |
-          set +e
-          if [ -d "ExampleProvider" ]; then
-            ./gradlew make makePluginsJson -x :ExampleProvider:make -x :ExampleProvider:compileDebugKotlin -x :ExampleProvider:compileReleaseKotlin --no-daemon --stacktrace 2>&1 | tee /tmp/gradle_build.log
-          else
-            ./gradlew make makePluginsJson --no-daemon --stacktrace 2>&1 | tee /tmp/gradle_build.log
-          fi
-          BUILD_EXIT=${PIPESTATUS[0]}
-          if [ $BUILD_EXIT -ne 0 ]; then
-            python3 -c '
-          import re
-          log = open("/tmp/gradle_build.log", errors="replace").read()
-          hits = re.findall(r"^e:\s+(?:file://)?([^:\n]+):(\d+):(\d+)\s+(.+)$", log, re.M)
-          for path, line, col, msg in hits[:15]:
-              rel = path.split("/JesansPlugin/")[-1]
-              print(f"::error file={rel},line={line},col={col}::{msg}")
-          if not hits:
-              for m in re.findall(r"(?m)^(?:> Task .* FAILED|FAILURE:.*|\* What went wrong:[\s\S]{0,600})", log)[:5]:
-                  clean = m.replace("\n", " | ").strip()
-                  print(f"::error::{clean}")
-          '
-            exit $BUILD_EXIT
-          fi
+        run: ./gradlew make makePluginsJson --no-daemon --stacktrace
 
-      - name: Collect Multi-Plugin Artifacts & Verify SHA256
+      - name: Collect Multi-Plugin Artifacts
         run: |
           rm -rf /tmp/cs3_builds_out && mkdir -p /tmp/cs3_builds_out
           find . -maxdepth 3 -path "*/build/*.cs3" -exec cp -v {} /tmp/cs3_builds_out/ \;
           if [ -f build/plugins.json ]; then
             cp -v build/plugins.json /tmp/cs3_builds_out/plugins.json
           fi
-          python3 -c '
-          import json, hashlib, os
-          out_dir = "/tmp/cs3_builds_out"
-          p_file = os.path.join(out_dir, "plugins.json")
-          repo = os.environ.get("GITHUB_REPOSITORY", "")
-          if os.path.exists(p_file):
-              data = json.load(open(p_file))
-              for item in data:
-                  internal = item.get("internalName", "")
-                  cs3_path = os.path.join(out_dir, f"{internal}.cs3")
-                  if os.path.exists(cs3_path):
-                      item["sha256"] = hashlib.sha256(open(cs3_path, "rb").read()).hexdigest()
-                      if repo:
-                          item["url"] = f"https://raw.githubusercontent.com/{repo}/builds/{internal}.cs3"
-              json.dump(data, open(p_file, "w"), indent=2)
-          '
           ls -la /tmp/cs3_builds_out/
 
       - name: Publish Multi-Plugin Builds Branch
