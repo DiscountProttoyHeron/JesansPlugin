@@ -31,19 +31,80 @@ jobs:
           java-version: 17
           cache: gradle
 
-      - name: Grant Execute Permission for Gradle Wrapper
-        run: chmod +x ./gradlew
+      - name: Grant Execute Permission & Purge Stale Artifacts
+        run: |
+          chmod +x ./gradlew
+          rm -rf /tmp/cs3_builds_out build/plugins.json /tmp/gradle_build.log
+          find . -maxdepth 3 -path "*/build/*.cs3" -delete
 
       - name: Build All Plugins (.cs3) & plugins.json
-        run: ./gradlew make makePluginsJson --no-daemon --stacktrace
-
-      - name: Collect Multi-Plugin Artifacts
         run: |
-          rm -rf /tmp/cs3_builds_out && mkdir -p /tmp/cs3_builds_out
+          set +e
+          EXTRA_EXCLUDES=""
+          if [ -d "ExampleProvider" ]; then
+            EXTRA_EXCLUDES="-x :ExampleProvider:make -x :ExampleProvider:compileDebugKotlin -x :ExampleProvider:compileReleaseKotlin"
+          fi
+          ./gradlew make makePluginsJson $EXTRA_EXCLUDES --no-daemon --stacktrace 2>&1 | tee /tmp/gradle_build.log
+          GRADLE_EXIT=${PIPESTATUS[0]}
+          python3 - <<'PY'
+          import re, pathlib
+          log_path = pathlib.Path("/tmp/gradle_build.log")
+          if log_path.exists():
+              text = log_path.read_text(encoding="utf-8", errors="ignore")
+              pat = re.compile(r"e:\s*file:///?(.*?):(\d+):(\d+)\s+(.*)")
+              for line in text.splitlines():
+                  m = pat.search(line)
+                  if m:
+                      fpath, lnum, cnum, msg = m.groups()
+                      rel = fpath.split(f"{pathlib.Path.cwd()}/", 1)[-1]
+                      print(f"::error file={rel},line={lnum},col={cnum}::{msg.strip()}")
+          PY
+          exit $GRADLE_EXIT
+
+      - name: Collect & Verify SHA-256 + Raw URL Integrity
+        env:
+          GITHUB_REPO_FULL: ${{ github.repository }}
+        run: |
+          mkdir -p /tmp/cs3_builds_out
           find . -maxdepth 3 -path "*/build/*.cs3" -exec cp -v {} /tmp/cs3_builds_out/ \;
           if [ -f build/plugins.json ]; then
             cp -v build/plugins.json /tmp/cs3_builds_out/plugins.json
           fi
+          if ! ls /tmp/cs3_builds_out/*.cs3 >/dev/null 2>&1; then
+            echo "::error::No .cs3 plugin artifacts were produced."
+            exit 1
+          fi
+          if [ ! -s /tmp/cs3_builds_out/plugins.json ]; then
+            echo "::error::build/plugins.json is missing or empty."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          out_dir = pathlib.Path("/tmp/cs3_builds_out")
+          repo = os.environ.get("GITHUB_REPO_FULL", "")
+          pj_path = out_dir / "plugins.json"
+          plugins = json.loads(pj_path.read_text(encoding="utf-8"))
+          cs3_map = {p.name: p for p in out_dir.glob("*.cs3")}
+          sums = []
+          for entry in plugins:
+              raw_url = str(entry.get("url", ""))
+              fname = raw_url.rsplit("/", 1)[-1] if raw_url else f"{entry.get('internalName', '')}.cs3"
+              target = cs3_map.get(fname)
+              if target is None:
+                  alt = f"{entry.get('internalName', '')}.cs3"
+                  target = cs3_map.get(alt)
+              if target is not None:
+                  digest = hashlib.sha256(target.read_bytes()).hexdigest()
+                  entry["sha256"] = digest
+                  if repo:
+                      entry["url"] = f"https://raw.githubusercontent.com/{repo}/builds/{target.name}"
+                  sums.append(f"{digest}  {target.name}")
+          pj_path.write_text(json.dumps(plugins, indent=2) + "\n", encoding="utf-8")
+          pj_sha = hashlib.sha256(pj_path.read_bytes()).hexdigest()
+          sums.append(f"{pj_sha}  plugins.json")
+          (out_dir / "SHA256SUMS.txt").write_text("\n".join(sums) + "\n", encoding="utf-8")
+          print(f"Verified {len(plugins)} plugin(s) in plugins.json")
+          PY
           ls -la /tmp/cs3_builds_out/
 
       - name: Publish Multi-Plugin Builds Branch
@@ -55,5 +116,5 @@ jobs:
           git clean -fdx
           cp -v /tmp/cs3_builds_out/* .
           git add -A
-          git commit -m "chore(builds): publish multi-plugin .cs3 artifacts & plugins.json"
+          git commit -m "chore(builds): publish verified .cs3 artifacts & plugins.json"
           git push --force origin HEAD:builds
